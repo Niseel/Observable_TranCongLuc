@@ -123,26 +123,180 @@ Observable theo quy tắc thì sẽ có 3 trạng thái:
 <hr />
 
 ### Bài 03 - Observable, subscribe, next với timeout và interval 
+- Next(): hiện giờ hiểu nó chỉ là 1 func – nó sẽ đc gọi khi nhận được tín hiểu của Producer gửi tới Cosumer
+- Promise theo hướng Eager (gọi .timeout là nó chạy, nó kịch hoạt timer luôn r)
+- Observable theo hướng Lazy (Chỉ chạy khi nào .subcribe thôi)
+```js
+// Promise theo hướng Eager
+Promise.timeout = function(ms) {
+  console.log('Kick hoat hay chua')
+  return new Promise(function(resolve) {
+    setTimeout(() => {
+      resolve()
+    }, ms);
+  })
+}
+
+// Gọi Promise.timeout() đã kích hoạt liền
+const promiseObj = Promise.timeout(4000)
+
+// .then thì sau 4s
+promiseObj.then(() => {
+  console.log('Da Call')
+})
+```
+
 
 <hr />
 
 ### Bài 04 - Lazy Observable với timeout
+- Subcribe là methob của 1 instance cụ thể (chứ k phải là 1 object như Promise) nên muốn thêm methob cho nó (subcribe) thì phải .prototype.subcibe
+
+```js
+function Observable(subscribe) {
+  this.subscribe = subscribe;
+}
+
+Observable.timeout = function(ms) {
+  function timeoutWaitToRun(next) {
+    setTimeout(() => {
+      next()
+    }, ms)
+  }
+  return new Observable(timeoutWaitToRun)
+}
+
+const obsTimeOut$ = Observable.timeout(3000); 
+
+const next = () => {
+    console.log('hello')
+} 
+
+obsTimeOut$.subscribe(next)
+
+// 1. Tạo instance obs từ Obj Observable.timeout thì sẽ k kicks hoạt timer ngày
+// 2. mà sẽ tạo ra 1 Obj với methob là subcribe có nhiệm vụ chạy hàm waittoRun
+```
 
 <hr />
 
 ### Bài 05 - Observable cơ bản với interval
+Y hết bài trên, và đã cho thấy đc, có thể trả về nhiều giá trị bất đông bộ với 1 lần gọi hàm mà k phải nhiều độ tượng Promise như đã đề cập.
 
 <hr />
 
 ### Bài 06 - Subscription và unsubscribe trong Observable?
+- Theo quy tắc Observable thì khi gọi .subcibe thì sẽ trả về cho ta 1 obj gọi là subscription
+- Subscript sẽ có 1 methob là unsubscribe (với timeout thì nó sẽ là clear timeout)
 
+```js
+function Observable(subscribe) {
+  this.subscribe = subscribe
+}
+
+function Subscription(unscribe) {
+  this.unscribe = unscribe
+}
+
+Observable.interval = function(ms) {
+  function intervalWaitToRun(next) {
+    const intervalId = setInterval(() => {
+      next()
+    }, ms)
+
+    return new Subscription(() => {
+      clearInterval(intervalId)
+    })
+  }
+  // func subscibe trả về Obj subscription
+  return new Observable(intervalWaitToRun)
+}
+
+const obsInterval$ = Observable.interval(500); 
+
+// Theo quy tắc observable thì nó phải trả về 1 obj supscription
+const subscription = obsInterval$.subscribe(() => {
+  console.log('Interval Call');
+})
+subscription.unscribe() // call để xóa đăng kí
+
+```
 <hr />
 
 ### Bài 07 - Tìm hiểu về Observer
+Bản chất là 1 Obj – là 1 tập hợp chứa tập hợp các Callback – các Callback này giúp chúng ta lắng nghe các giá trị được gửi tới từ Observable(tức là Producer ấy) 
+**// Observer = { next, complete, error }**
+Ví dụ như timeout gọi 1 lần chạy là xong hết việc, nên nó cần gọi complete, còn interval thì không.
+Timeout và interval thì k có error
+#### Example: Fetch
+- Thì BackEnd Server là Producer – còn ứng dụng của chúng ta đang đợi data là Consumer 
+
+<img src="./imgs/table1.jpg">
+
+**Note:** 1 Observable bị unscribe() KHÔNG đồng nghĩa là nó complete() 
+
+```js
+const observe = {
+  next() {
+    console.log('next run')
+  }, 
+  error() {
+    
+  },
+  complete() {
+    console.log('complete run')
+  }
+}
+const subs = obsTimeOut$
+  .subscribe(observe)
+// Nhớ chỉnh sửa đối số của hàm waitToRun nhé
+
+```
 
 <hr />
 
 ### Bài 08 và 09 - Hiện thực Observer or Next
+- Hoàn thiện code để khi người dùng muốn truyền vào {} observe cũng đc hoặc truyền 3 đối số là 3 hàm xử lí next, error, complete đều được. (Đều được như thư viện RxJs)
+
+```js
+  // Sửa lại hàm watiToRun để kiểm tra đối số truyền vào là được
+  function timeoutWaitToRun(observeOrNext, error, complete) {
+    let observe;
+    if(typeof observeOrNext == 'function') {
+      observe = {
+        next: observeOrNext,
+        error: error || (() => {}),
+        complete: complete || (() => {})
+      }
+    }
+    else {
+      observe = observeOrNext
+    }
+```
+
+Mỗi mô hình từng hàm waitRun (_subscribe) lại phải lặp lại việc kiểm tra đối số truyền vào rất là mất công.
+Kĩ thuật gom nhóm logic lại: **higher order func** để xử lí chung đầu vào cho các hàm _subscribe
+
+```js
+Observable.prototype.subscribe = function (observeOrNext, error, complete) {
+  debugger
+  let observe;
+  if(typeof observeOrNext == 'function') {
+    observe = {
+      next: observeOrNext,
+      error: error || (() => {}),
+      complete: complete || (() => {})
+    }
+  }
+  else {
+    observe = observeOrNext
+  }
+
+  return this._subscribe(observe)
+}
+
+```
+Nên giờ mọi hàm subscribe khi gọi sẽ đc kiểm tra đầu vào rồi tiến hành xử lí logic như bình thường
 
 <hr />
 
@@ -151,4 +305,4 @@ Observable theo quy tắc thì sẽ có 3 trạng thái:
 
 ```
 
-<img src="./imgs/table1.jpg">
+
